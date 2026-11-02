@@ -52,28 +52,57 @@ export default function FilterBar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface">
-      <div className="mx-auto flex w-full max-w-[1800px] flex-wrap items-center gap-2 px-4 py-3 pl-[4.25rem] sm:px-5 sm:pl-[4.5rem] lg:h-[var(--header-h)] lg:flex-nowrap lg:px-6 lg:py-0 lg:pl-6 2xl:px-8">
-        <MemberPicker
-          value={filters.member}
-          roster={roster}
-          onChange={v => updateFilter('member', v)}
-        />
+      <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-5 lg:px-6 2xl:px-8">
 
-        <DateField
-          label="From"
-          value={filters.dateFrom}
-          maxKey={filters.dateTo || bounds.max}
-          onChange={v => setDateRange(v, filters.dateTo)}
-        />
+        {/* Mobile: brand row. Leaves room for the fixed menu button at left. */}
+        <div className="flex h-14 items-center gap-2 pl-14 lg:hidden">
+          <Link href="/" aria-label="Go to overview" className="flex items-center">
+            <Image
+              src="/assets/logo.png"
+              alt="Thunderball"
+              width={100}
+              height={100}
+              priority
+              className="h-9 w-auto object-contain"
+            />
+          </Link>
+          <span className="ml-auto">
+            <ThemeToggle />
+          </span>
+        </div>
 
-        {/* The end date can never precede the start date. */}
-        <DateField
-          label="To"
-          value={filters.dateTo}
-          minKey={filters.dateFrom}
-          maxKey={bounds.max}
-          onChange={v => setDateRange(filters.dateFrom, v)}
-        />
+        {/* Filters. Deliberately wraps rather than scrolls — a scrolling row
+            needs overflow, and overflow clips the pickers' popovers. */}
+        <div className="flex flex-wrap items-center gap-2 pb-3 lg:h-[var(--header-h)] lg:flex-nowrap lg:pb-0">
+
+          {/* Its own full-width row below lg */}
+          <div className="w-full max-lg:[&>div]:w-full max-lg:[&_input]:w-full lg:w-auto">
+            <MemberPicker
+              value={filters.member}
+              roster={roster}
+              onChange={v => updateFilter('member', v)}
+            />
+          </div>
+
+          {/* The two dates share one row and split it evenly */}
+          <div className="flex w-full gap-2 max-lg:[&>div>button]:w-full max-lg:[&>div]:flex-1 lg:contents lg:w-auto">
+            <DateField
+              label="From"
+              value={filters.dateFrom}
+              maxKey={filters.dateTo || bounds.max}
+              onChange={v => setDateRange(v, filters.dateTo)}
+            />
+
+            {/* The end date can never precede the start date. */}
+            <DateField
+              label="To"
+              value={filters.dateTo}
+              minKey={filters.dateFrom}
+              maxKey={bounds.max}
+              onChange={v => setDateRange(filters.dateFrom, v)}
+              align="right"
+            />
+          </div>
 
         {semesters.length > 0 && (
           <>
@@ -109,24 +138,24 @@ export default function FilterBar() {
           </button>
         )}
 
-        {/* Logo and theme switch live at the far right. The logo fills the
-            header's full height with no padding of its own. */}
-        <div className="ml-auto flex shrink-0 items-center gap-2.5">
-          <ThemeToggle />
-          <Link
-            href="/"
-            aria-label="Go to overview"
-            className="-my-1 flex shrink-0 items-center lg:-my-0 lg:h-full"
-          >
-            <Image
-              src="/assets/logo.png"
-              alt="Thunderball"
-              width={100}
-              height={100}
-              priority
-              className="h-9 w-auto object-contain lg:h-12"
-            />
-          </Link>
+          {/* Desktop only — on mobile these live in the brand row above */}
+          <div className="ml-auto hidden shrink-0 items-center gap-2.5 lg:flex lg:h-full">
+            <ThemeToggle />
+            <Link
+              href="/"
+              aria-label="Go to overview"
+              className="flex h-full shrink-0 items-center"
+            >
+              <Image
+                src="/assets/logo.png"
+                alt="Thunderball"
+                width={100}
+                height={100}
+                priority
+                className="h-12 w-auto object-contain"
+              />
+            </Link>
+          </div>
         </div>
       </div>
     </header>

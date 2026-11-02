@@ -13,11 +13,15 @@ const NAV = [
   { href: '/products', label: 'Products', icon: Boxes },
 ];
 
-function NavContent({ pathname, onNavigate }) {
+function NavContent({ pathname, onNavigate, inDrawer = false }) {
   return (
     <div className="flex h-full flex-col">
-      {/* Matches the header's height so the two dividers form one line */}
-      <div className="flex h-[var(--header-h)] shrink-0 items-center border-b border-line px-5">
+      {/* Matches the header's height so the two dividers form one line.
+          In the drawer the close button overlaps this row, so the title
+          is pushed clear of it. */}
+      <div
+        className={`flex h-[var(--header-h)] shrink-0 items-center border-b border-line pr-4 ${inDrawer ? 'pl-[3.75rem]' : 'pl-5'}`}
+      >
         <p className="font-display text-[16px] font-extrabold leading-tight tracking-[0.02em] text-ink">
           SU Performance Tracker
         </p>
@@ -93,20 +97,24 @@ export default function Sidebar() {
         aria-label={open ? 'Close menu' : 'Open menu'}
         aria-expanded={open}
         onClick={() => setOpen(o => !o)}
-        className="fixed left-3 top-3 z-50 grid h-10 w-10 place-items-center rounded-md2 border border-line bg-surface text-ink shadow-e2 transition active:scale-95 lg:hidden"
+        className="fixed left-3 top-2 z-[70] grid h-10 w-10 place-items-center rounded-md2 border border-line bg-surface text-ink shadow-e2 transition active:scale-95 lg:hidden"
       >
         {open ? <X size={18} strokeWidth={2.4} /> : <Menu size={18} strokeWidth={2.4} />}
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        // Above the sticky header (z-40), otherwise the header covers the
+        // drawer's first nav items.
+        <div className="fixed inset-0 z-[60] lg:hidden">
           <div
             className="absolute inset-0 bg-ink/50 backdrop-blur-[2px]"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
-          <aside className="animate-pop absolute left-0 top-0 h-dvh w-[232px] border-r border-line bg-surface shadow-e4">
-            <NavContent pathname={pathname} onNavigate={() => setOpen(false)} />
+          {/* Wider than the desktop rail so the title fits beside the
+              close button; capped so the page stays visible behind it. */}
+          <aside className="animate-pop absolute left-0 top-0 h-dvh w-[min(86vw,310px)] border-r border-line bg-surface shadow-e4">
+            <NavContent pathname={pathname} onNavigate={() => setOpen(false)} inDrawer />
           </aside>
         </div>
       )}
