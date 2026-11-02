@@ -1,76 +1,98 @@
 'use client';
+
 import { useEffect, useRef, useState } from 'react';
 
-function useCountUp(target, duration = 1200) {
-  const [value, setValue] = useState(0);
-  const startRef = useRef(null);
+/** Count-up that honours reduced-motion and never animates non-numerics. */
+function useCountUp(target, enabled, duration = 750) {
+  const [value, setValue] = useState(enabled ? 0 : target);
+  const frame = useRef(null);
 
   useEffect(() => {
-    if (target === 0) { setValue(0); return; }
-    startRef.current = performance.now();
-    const animate = (now) => {
-      const elapsed = now - startRef.current;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setValue(Math.round(eased * target));
-      if (progress < 1) requestAnimationFrame(animate);
+    if (!enabled) { setValue(target); return; }
+    const reduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced || target === 0) { setValue(target); return; }
+
+    const start = performance.now();
+    const tick = now => {
+      const p = Math.min((now - start) / duration, 1);
+      setValue(Math.round((1 - Math.pow(1 - p, 3)) * target));
+      if (p < 1) frame.current = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(animate);
-  }, [target, duration]);
+    frame.current = requestAnimationFrame(tick);
+    return () => frame.current && cancelAnimationFrame(frame.current);
+  }, [target, enabled, duration]);
 
   return value;
 }
 
-const ACCENT_COLORS = {
-  blue: { bg: 'rgba(67, 24, 255, 0.1)', border: 'rgba(67, 24, 255, 0.2)', icon: '#4318FF', glow: 'rgba(67, 24, 255, 0.2)' },
-  cyan: { bg: 'rgba(0, 117, 255, 0.1)', border: 'rgba(0, 117, 255, 0.2)', icon: '#0075FF', glow: 'rgba(0, 117, 255, 0.2)' },
-  green: { bg: 'rgba(1, 181, 116, 0.1)', border: 'rgba(1, 181, 116, 0.2)', icon: '#01B574', glow: 'rgba(1, 181, 116, 0.2)' },
-  orange: { bg: 'rgba(255, 181, 71, 0.1)', border: 'rgba(255, 181, 71, 0.2)', icon: '#FFB547', glow: 'rgba(255, 181, 71, 0.2)' },
-  red: { bg: 'rgba(238, 93, 80, 0.1)', border: 'rgba(238, 93, 80, 0.2)', icon: '#EE5D50', glow: 'rgba(238, 93, 80, 0.2)' },
-  purple: { bg: 'rgba(67, 24, 255, 0.1)', border: 'rgba(67, 24, 255, 0.2)', icon: '#4318FF', glow: 'rgba(67, 24, 255, 0.2)' },
+// Icon chip + hover accent per tile. Both sides are theme variables, so a
+// tile tints softly on white and softly on navy without a second palette.
+const mix = hex => `color-mix(in srgb, ${hex} var(--tint), rgb(var(--c-surface)))`;
+
+const TONES = {
+  brand: { fg: 'rgb(var(--c-brand-ink))', bg: mix('#037EF3') },
+  gv: { fg: 'rgb(var(--c-gv-ink))', bg: mix('#F85A40') },
+  gta: { fg: 'rgb(var(--c-gta-ink))', bg: mix('#0CB9C1') },
+  gte: { fg: 'rgb(var(--c-gte-ink))', bg: mix('#F48924') },
+  violet: { fg: 'rgb(var(--c-violet-ink))', bg: mix('#7B5BD6') },
+  good: { fg: 'rgb(var(--c-good-ink))', bg: mix('#0E8F5F') },
+  neutral: { fg: 'rgb(var(--c-ink-2))', bg: 'rgb(var(--c-surface-2))' },
 };
 
-export default function KPICard({ label, value, suffix = '', prefix = '', icon, color = 'blue', sub, animate = true }) {
-  const numericValue = typeof value === 'number' ? value : parseFloat(value) || 0;
-  const animatedValue = useCountUp(numericValue);
-  const displayed = animate ? animatedValue : numericValue;
-  const c = ACCENT_COLORS[color] || ACCENT_COLORS.blue;
+export default function KPICard({
+  label, value, suffix = '', prefix = '',
+  icon: Icon, tone = 'brand', sub, animate = true,
+}) {
+  const isNumber = typeof value === 'number' && Number.isFinite(value);
+  const shown = useCountUp(isNumber ? value : 0, animate && isNumber);
+  const t = TONES[tone] || TONES.brand;
 
   return (
-    <div
-      className="relative rounded-[20px] p-5 flex flex-col gap-3 transition-all duration-300 hover:-translate-y-0.5"
-      style={{
-        background: 'rgba(255, 255, 255, 0.05)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        boxShadow: '0 4px 30px rgba(0, 0, 0, 0.4)',
-      }}
+    <article
+      className="card group relative overflow-hidden p-4 transition-colors duration-200 ease-out2"
     >
-      {/* Top row */}
-      <div className="flex items-start justify-between">
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#A0AEC0', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
-          {label}
-        </p>
-        {icon && (
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center animate-pulse-slow" style={{ background: c.bg, border: `1px solid ${c.border}`, boxShadow: `0 0 15px ${c.glow}` }}>
-            <span style={{ color: c.icon }}>{icon}</span>
-          </div>
+      {/* The accent shows on hover instead of sitting permanently at the
+          bottom edge, so a row of tiles reads calmly at rest. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 ease-out2 group-hover:opacity-50"
+        style={{ background: t.bg }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 rounded-lg2 opacity-0 ring-1 ring-current ring-inset transition-opacity duration-200 ease-out2 group-hover:opacity-100"
+        style={{ color: t.fg }}
+      />
+
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="text-2xs font-bold uppercase tracking-wider text-ink-3">{label}</p>
+        {Icon && (
+          <span
+            className="relative grid h-8 w-8 shrink-0 place-items-center rounded-md2"
+            style={{ background: t.bg, color: t.fg }}
+            aria-hidden="true"
+          >
+            <Icon size={16} strokeWidth={2.2} />
+          </span>
         )}
       </div>
 
-      {/* Value */}
-      <div>
-        <p className="text-3xl font-bold leading-none" style={{ color: '#FFFFFF', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
-          {prefix}{typeof value === 'number' ? displayed.toLocaleString() : value}{suffix}
+      {isNumber ? (
+        <p className="tnum relative mt-2.5 font-display text-3xl font-extrabold leading-none text-ink">
+          {prefix}{shown.toLocaleString()}
+          {suffix && <span className="text-xl font-bold text-ink-2">{suffix}</span>}
         </p>
-        {sub && (
-          <p className="text-xs mt-1.5 font-medium" style={{ color: '#A0AEC0' }}>{sub}</p>
-        )}
-      </div>
+      ) : (
+        <p
+          className="relative mt-2.5 truncate font-display text-xl font-extrabold leading-tight text-ink"
+          title={String(value)}
+        >
+          {prefix}{value}{suffix}
+        </p>
+      )}
 
-      {/* Decorative accent glow */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/10 blur-[60px] -z-10 pointer-events-none" />
-    </div>
+      {sub && <p className="relative mt-1.5 truncate text-xs text-ink-3">{sub}</p>}
+    </article>
   );
 }

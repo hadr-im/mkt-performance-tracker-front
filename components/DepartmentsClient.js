@@ -1,182 +1,277 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, Legend, Cell
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid, Legend, Cell,
 } from 'recharts';
+import {
+  Building2, Users, UsersRound, Trophy, TableProperties, Search, X,
+} from 'lucide-react';
+
 import { useFilters } from './FilterContext';
 import KPICard from './KPICard';
+import PageHeader from './PageHeader';
+import ScopedCard from './ScopedCard';
+import { fetchApi } from '../lib/api';
 import {
-  ChartCard, SectionTitle, Badge, LoadingState, ErrorState,
-  tooltipStyle, axisStyle, gridStyle, PALETTE, getDeptColor
+  ChartCard, ChartTooltip, LoadingState, ErrorState, EmptyState, DeptBadge,
+  axisStyle, gridStyle, tooltipStyle, getDeptColor,
+  formatDayTick, formatDayFull,
 } from './ChartConfig';
 
-import { fetchApi } from '../lib/api';
+const CHIP = 'inline-flex h-9 min-h-[36px] items-center rounded-md2 border px-2.5 text-xs font-bold transition-colors duration-200 ease-out2';
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
+/** Roster table with its own department filter and search. */
+function MembersTable({ rows, rosterDepts }) {
+  const [dept, setDept] = useState('');
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(m =>
+      (!dept || m.department === dept) &&
+      (!q || m.name.toLowerCase().includes(q) || m.department.toLowerCase().includes(q))
+    );
+  }, [rows, dept, search]);
+
   return (
-    <div style={tooltipStyle.contentStyle} className="px-3 py-2">
-      <p style={tooltipStyle.labelStyle} className="mb-1">{label}</p>
-      {payload.map((p, i) => (
-        <p key={i} style={{ color: p.color }}>{p.name}: <strong>{p.value}</strong></p>
-      ))}
-    </div>
+    <>
+      {/* Filters and search share one row; search sits at the right */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by department">
+          <button
+            type="button" onClick={() => setDept('')} aria-pressed={!dept}
+            className={`${CHIP} ${!dept
+              ? 'border-brand bg-brand text-white'
+              : 'border-line bg-surface text-ink-2 hover:border-line-2 hover:bg-surface-2'}`}
+          >
+            All departments
+          </button>
+          {rosterDepts.map(d => {
+            const on = dept === d;
+            const color = getDeptColor(d);
+            return (
+              <button
+                key={d} type="button" onClick={() => setDept(on ? '' : d)} aria-pressed={on}
+                className={CHIP}
+                style={on
+                  ? { background: color, borderColor: color, color: 'rgb(var(--c-surface))' }
+                  : { background: 'rgb(var(--c-surface))', borderColor: 'rgb(var(--c-line))', color }}
+              >
+                <span className="mr-1.5 h-1.5 w-1.5 rounded-full" style={{ background: on ? '#fff' : color }} aria-hidden="true" />
+                {d}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="relative ml-auto w-full sm:w-64">
+          <Search size={14} strokeWidth={2.2} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-4" />
+          <input
+            type="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search members…"
+            aria-label="Search members"
+            className="h-9 w-full rounded-md2 border border-line bg-surface pl-8 pr-3 text-sm font-semibold text-ink outline-none transition-colors placeholder:font-medium placeholder:text-ink-3 hover:border-line-2 focus:border-brand/45"
+          />
+        </div>
+      </div>
+
+      <p className="mb-2 text-2xs font-semibold text-ink-4">
+        {filtered.length} of {rows.length} on the roster
+      </p>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title="No members match"
+          message={search ? `Nothing matches “${search}”.` : 'No members in this department.'}
+          icon={Search}
+        />
+      ) : (
+        <div className="scroll-x">
+          <table className="w-full min-w-[480px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-line">
+                {['Member', 'Department', 'Signups', 'Active days'].map(c => (
+                  <th key={c} scope="col" className="whitespace-nowrap px-2.5 py-3 text-xs font-bold uppercase tracking-wider text-ink-3">
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((m, i) => (
+                <tr key={`${m.name}-${i}`} className="border-b border-line/70 transition-colors hover:bg-surface-2">
+                  <td className="px-2.5 py-2.5 text-sm font-semibold text-ink">{m.name}</td>
+                  <td className="px-2.5 py-2.5"><DeptBadge department={m.department} /></td>
+                  <td className={`tnum px-2.5 py-2.5 font-display text-sm font-extrabold ${m.signups ? 'text-ink' : 'text-ink-4'}`}>
+                    {m.signups.toLocaleString()}
+                  </td>
+                  <td className={`tnum px-2.5 py-2.5 text-sm ${m.activeDays ? 'text-ink-2' : 'text-ink-4'}`}>
+                    {m.activeDays}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
-};
+}
 
 export default function DepartmentsClient({ initialData }) {
   const { filters } = useFilters();
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState(null);
-  const [selectedDept, setSelectedDept] = useState(initialData?.departments?.[0]?.department || null);
 
   const load = useCallback(async () => {
-    const hasFilters = filters.member || filters.dateFrom || filters.dateTo;
-    
-    if (!hasFilters && initialData) {
-      setData(initialData);
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
+    setError(null);
     try {
-      const d = await fetchApi('/api/departments', {
-        member: filters.member,
-        dateFrom: filters.dateFrom,
-        dateTo: filters.dateTo
-      });
-      setData(d);
-      setSelectedDept(prev => !prev && d.departments?.length ? d.departments[0].department : prev);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, initialData]);
+      setData(await fetchApi('/api/departments', {
+        member: filters.member, dateFrom: filters.dateFrom, dateTo: filters.dateTo,
+      }));
+    } catch (e) { setError(e.message); } finally { setLoading(false); }
+  }, [filters]);
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} />;
+  if (loading && !data) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return null;
 
-  const { departments, memberBreakdown, deptTimeSeries, allDepts, signupsByMember } = data;
+  const { departments = [], memberBreakdown = [] } = data;
+  const mappingAvailable = data.availability?.departments ?? true;
 
-  const activeDeptMembers = memberBreakdown.filter(m => !selectedDept || m.department === selectedDept);
-  const activeDept = departments.find(d => d.department === selectedDept);
+  if (!mappingAvailable) {
+    return (
+      <div className="animate-fade-up">
+        <PageHeader title="Departments" subtitle="Signup performance by department" />
+        <ChartCard>
+          <EmptyState
+            icon={TableProperties}
+            title="No department mapping in the spreadsheet"
+            message='Add a tab named "Departments" with member names in column A and their department in column B. This page then fills in automatically — no code change needed.'
+          />
+        </ChartCard>
+      </div>
+    );
+  }
+
+  const known = departments.filter(d => d.department !== 'Unknown');
+  const unknown = departments.find(d => d.department === 'Unknown');
+  const totalSignups = known.reduce((s, d) => s + d.signups, 0);
+  const activeMembers = memberBreakdown.filter(m => m.signups > 0).length;
+  const topDept = known[0];
 
   return (
-    <div className="space-y-8 animate-fade-up">
-      <div>
-        <h1 className="text-3xl font-extra-bold tracking-tight" style={{ color: '#FFFFFF', fontFamily: 'var(--font-plus-jakarta), sans-serif' }}>Departments</h1>
-        <p className="text-sm mt-2 font-medium" style={{ color: '#A0AEC0' }}>Sign-up performance broken down by department</p>
+    <div className="animate-fade-up">
+      <PageHeader title="Departments" subtitle="Signup performance by department" />
+
+      <div className="stagger grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <KPICard label="Departments" value={known.length} icon={Building2} tone="brand" />
+        <KPICard label="Signups" value={totalSignups} icon={Users} tone="gta" sub="Mapped to a department" />
+        <KPICard label="Active Members" value={activeMembers} icon={UsersRound} tone="violet" sub={`of ${memberBreakdown.length} on the roster`} />
+        <KPICard
+          label="Top Department" value={topDept?.department || '—'}
+          icon={Trophy} tone="gte" animate={false}
+          sub={`${(topDept?.signups || 0).toLocaleString()} signups`}
+        />
       </div>
 
-      {/* Department cards */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {departments.map((dept, i) => (
-          <button
-            key={dept.department}
-            onClick={() => setSelectedDept(dept.department === selectedDept ? null : dept.department)}
-            className="rounded-[20px] p-5 md:p-6 text-left transition-all duration-300 hover:-translate-y-1 group"
-            style={{
-              background: selectedDept === dept.department ? 'linear-gradient(135deg, #4318FF, #0075FF)' : 'rgba(255, 255, 255, 0.05)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              border: selectedDept === dept.department ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
-              boxShadow: selectedDept === dept.department ? '0 10px 30px rgba(67, 24, 255, 0.3)' : '0 4px 30px rgba(0, 0, 0, 0.2)',
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full shadow-sm" style={{ background: selectedDept === dept.department ? 'rgba(255,255,255,0.2)' : `${getDeptColor(dept.department)}22`, color: selectedDept === dept.department ? '#FFFFFF' : getDeptColor(dept.department), border: '1px solid currentColor', fontFamily: 'var(--font-plus-jakarta), sans-serif' }}>
-                {dept.department}
-              </span>
-              <span className="hidden md:inline text-[11px] font-bold" style={{ color: selectedDept === dept.department ? 'rgba(255,255,255,0.8)' : '#A0AEC0' }}>{dept.members} members</span>
-            </div>
-            <p className="text-2xl md:text-4xl font-extra-bold mb-1" style={{ color: '#FFFFFF', fontFamily: 'var(--font-plus-jakarta), sans-serif' }}>{dept.signups.toLocaleString()}</p>
-            <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: selectedDept === dept.department ? 'rgba(255,255,255,0.6)' : '#A0AEC0' }}>Total Signups</p>
-          </button>
-        ))}
-      </div>
-
-      {/* SU vs Leads by dept */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <ChartCard title="Signups by Department">
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={departments} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid {...gridStyle} />
-              <XAxis dataKey="department" {...axisStyle} />
-              <YAxis {...axisStyle} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="signups" name="Signups" fill="#2EA3F2" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        {/* Dept time series */}
-        <ChartCard title="Signups Over Time by Department">
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={deptTimeSeries} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid {...gridStyle} />
-              <XAxis dataKey="date" {...axisStyle} tickFormatter={d => d.slice(5)} />
-              <YAxis {...axisStyle} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ color: '#A0AEC0', fontSize: 12, fontFamily: 'Space Grotesk, sans-serif', paddingTop: '10px' }} />
-              {allDepts.map((dept, i) => {
-                const isFocused = !selectedDept || selectedDept === dept;
-                return (
-                  <Line
-                    key={dept}
-                    type="monotone"
-                    dataKey={dept}
-                    name={dept}
-                    stroke={getDeptColor(dept)}
-                    strokeWidth={isFocused ? 2.5 : 0.8}
-                    strokeOpacity={isFocused ? 1 : 0.08}
-                    dot={false}
-                    activeDot={{ r: isFocused ? 4 : 0 }}
-                    connectNulls={true}
-                    animationDuration={300}
-                  />
-                );
-              })}
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-
-      {/* Member table */}
-      <ChartCard title={selectedDept ? `Members · ${selectedDept}` : 'All Members'}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                {['Member', 'Department', 'Signups', 'Active Days'].map(col => (
-                  <th key={col} className="text-left py-3 px-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#A0AEC0', fontFamily: 'Space Grotesk, sans-serif' }}>{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {activeDeptMembers.map((m, i) => (
-                <tr key={i} className="transition-all duration-200 hover:bg-white/[0.03]" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td className="py-4 px-4 font-bold text-[13px]" style={{ color: '#FFFFFF', fontFamily: 'var(--font-plus-jakarta), sans-serif' }}>{m.name}</td>
-                  <td className="py-4 px-4">
-                    <span className="text-[10px] font-extra-bold uppercase tracking-widest px-2.5 py-1 rounded-full border" style={{ background: `${getDeptColor(m.department)}15`, color: getDeptColor(m.department), borderColor: `${getDeptColor(m.department)}33` }}>{m.department}</span>
-                  </td>
-                  <td className="py-4 px-4 font-extra-bold text-[15px]" style={{ color: '#FFFFFF', fontFamily: 'var(--font-plus-jakarta), sans-serif' }}>{m.signups}</td>
-                  <td className="py-4 px-4 text-[11px] font-bold uppercase tracking-widest" style={{ color: '#A0AEC0' }}>{m.activeDays}d active</td>
-                </tr>
-              ))}
-              {activeDeptMembers.length === 0 && (
-                <tr><td colSpan={8} className="py-12 text-center text-sm font-bold tracking-widest uppercase" style={{ color: '#A0AEC0' }}>No synchronized data</td></tr>
-              )}
-            </tbody>
-          </table>
+      {unknown && unknown.signups > 0 && (
+        <div className="card mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-gte/30 bg-gte-soft px-4 py-3">
+          <TableProperties size={16} strokeWidth={2.2} className="shrink-0 text-gte-ink" />
+          <p className="text-sm font-semibold text-gte-ink">
+            {unknown.signups.toLocaleString()} signups have no department
+          </p>
+          <p className="text-xs text-gte-ink/80">
+            Their member names are missing from the Departments tab.
+          </p>
         </div>
-      </ChartCard>
+      )}
+
+      <ScopedCard
+        title="Signups by Department" endpoint="/api/departments"
+        className="mt-4" skeletonHeight={300}
+      >
+        {d => {
+          const rows = (d.departments || []).filter(x => x.department !== 'Unknown');
+          const total = rows.reduce((s, x) => s + x.signups, 0);
+          return rows.length === 0 ? (
+            <EmptyState message="No department data in this range." />
+          ) : (
+            <div className="w-full" style={{ height: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 8, right: 6, left: -22, bottom: 4 }}>
+                  <CartesianGrid {...gridStyle} />
+                  <XAxis dataKey="department" {...axisStyle} interval={0} tick={{ ...axisStyle.tick, fontSize: 11 }} />
+                  <YAxis {...axisStyle} width={44} allowDecimals={false} />
+                  <Tooltip cursor={tooltipStyle.cursor} content={<ChartTooltip total={total} />} />
+                  <Bar dataKey="signups" name="Signups" radius={[4, 4, 0, 0]} maxBarSize={56}>
+                    {rows.map(x => <Cell key={x.department} fill={getDeptColor(x.department)} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        }}
+      </ScopedCard>
+
+      <ScopedCard
+        title="Signups Over Time" sub="All departments" endpoint="/api/departments"
+        className="mt-4" skeletonHeight={320}
+      >
+        {d => (
+          (d.deptTimeSeries || []).length === 0 ? (
+            <EmptyState message="No signups in this range." />
+          ) : (
+            <div className="w-full" style={{ height: 320 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={d.deptTimeSeries} margin={{ top: 8, right: 6, left: -22, bottom: 0 }}>
+                  <defs>
+                    {(d.allDepts || []).map(x => (
+                      <linearGradient key={x} id={`dept-${x.replace(/\W/g, '')}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={getDeptColor(x)} stopOpacity={0.18} />
+                        <stop offset="100%" stopColor={getDeptColor(x)} stopOpacity={0} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid {...gridStyle} />
+                  <XAxis dataKey="date" {...axisStyle} tickFormatter={formatDayTick} minTickGap={34} />
+                  <YAxis {...axisStyle} width={44} allowDecimals={false} />
+                  <Tooltip content={<ChartTooltip formatLabel={formatDayFull} />} />
+                  <Legend wrapperStyle={{ fontSize: 11.5, fontWeight: 600, paddingTop: 8 }} iconType="circle" iconSize={8} />
+                  {(d.allDepts || []).map(x => (
+                    <Area
+                      key={x} type="monotone" dataKey={x} name={x}
+                      stroke={getDeptColor(x)} strokeWidth={2}
+                      fill={`url(#dept-${x.replace(/\W/g, '')})`}
+                      dot={false} activeDot={{ r: 5, stroke: 'rgb(var(--c-surface))', strokeWidth: 2 }}
+                    />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )
+        )}
+      </ScopedCard>
+
+      <ScopedCard
+        title="Members" endpoint="/api/departments"
+        className="mt-4" skeletonHeight={360}
+      >
+        {d => (
+          <MembersTable
+            rows={d.memberBreakdown || []}
+            rosterDepts={d.rosterDepts || []}
+          />
+        )}
+      </ScopedCard>
     </div>
   );
 }
